@@ -11,19 +11,19 @@ struct FPropertyParserStruct
 	GENERATED_BODY()
 
 	// 变量名称，当存储的数据是 TArray、TSet、TMap 中的元素时，会有问题 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "ReflectionTool")
 	FString Name;
 
 	// 变量类型
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "ReflectionTool")
 	FString TypeName;
 
 	// 变量值，当存储的数据是 TArray、TSet、TMap 等复杂数据结构体时，该值为空，实际值都在 Children 中
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "ReflectionTool")
 	FString Value;
 	
 	// 是否有 Child
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "ReflectionTool")
 	bool bHaveChild = false;
 
 	// 存储 TArray 中元素、Struct 中成员等
