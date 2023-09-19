@@ -482,7 +482,7 @@ void UReflectionToolLib::FGetStructPropertyMap(const void* StructAddr, const USt
 	}
 }
 
-void UReflectionToolLib::SetStructPropertyByMap(const int32& StructReference, const TMap<FString, FString>& ResMap)
+void UReflectionToolLib::SetStructPropertyByMap(const int32& StructReference, const TMap<FString, FString>& InMap)
 {
 	check(0);
 }

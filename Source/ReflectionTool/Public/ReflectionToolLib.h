@@ -102,13 +102,14 @@ public:
 #pragma endregion
 
 #pragma region 使用Map设置结构体的值
-	template<typename StructType>
-	static static void UStructToPropertyStruct(StructType& InStruct, const TMap<FString, FString>& InMap);
-	
 	// 使用 Map 中的数据填充结构体
+	template<typename InStructType>
+	static void SetStructByMap(InStructType& InStruct, const TMap<FString, FString>& InMap);
+	
+	// 使用 Map 中的数据填充结构体 (辅助函数)
 	static void SetStructValueByMap(const UStruct* StructClass, void* Struct, const TMap<FString, FString>& InMap);
 
-	// 使用 Map 中的数据填充结构体（辅助函数）
+	// 使用 Map 中的数据填充结构体 (辅助函数)
 	static void SetStructValueByMap(FStructProperty* StructProperty, void* Addr, const TMap<FString, FString>& InMap);
 
 #pragma endregion
@@ -209,10 +210,10 @@ public:
 	/**
 	 * @brief 蓝图泛型节点，将 TMap 中的数据填入结构体 (无法处理存放复杂数据的 TArray TSet TMap，目前没考虑结构体套结构体的问题)
 	 * @param StructReference 
-	 * @param ResMap 
+	 * @param InMap 
 	 */
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "ReflectionTool", meta = (CustomStructureParam = "StructReference"))
-	static void SetStructPropertyByMap(const int32& StructReference, const TMap<FString, FString>& ResMap);
+	static void SetStructPropertyByMap(const int32& StructReference, const TMap<FString, FString>& InMap);
 	DECLARE_FUNCTION(execSetStructPropertyByMap)
 	{
 		// ----------------------------- Begin Get Property ----------------------------
@@ -283,8 +284,8 @@ void UReflectionToolLib::UStructToPropertyStruct(FPropertyParserStruct InPropert
 	ParserPropertyParserStruct(OutStructType::StaticStruct(), &OutStruct, InPropertyParserStruct);
 }
 
-template <typename StructType>
-void UReflectionToolLib::UStructToPropertyStruct(StructType& InStruct, const TMap<FString, FString>& InMap)
+template <typename InStructType>
+void UReflectionToolLib::SetStructByMap(InStructType& InStruct, const TMap<FString, FString>& InMap)
 {
-	SetStructValueByMap(StructType::StaticStruct(), &InStruct, InMap);
+	SetStructValueByMap(InStructType::StaticStruct(), &InStruct, InMap);
 }
