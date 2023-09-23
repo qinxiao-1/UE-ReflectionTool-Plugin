@@ -460,6 +460,18 @@ void UReflectionToolLib::FGetPropertyParserStruct(const void* StructAddr, const 
     }
 }
 
+void UReflectionToolLib::SetStructByPPS(const int32& StructReference,
+	const FPropertyParserStruct& InPropertyParserStruct)
+{
+	check(0);
+}
+
+void UReflectionToolLib::FSetStructByPPS(void* StructAddr, const UStruct* StructProperty,
+	FPropertyParserStruct& InPropertyParserStruct)
+{
+	ParserPropertyParserStruct(StructProperty, StructAddr, InPropertyParserStruct);
+}
+
 void UReflectionToolLib::GetStructPropertyMap(const int32& StructReference, TMap<FString, FString>& ResMap)
 {
 	check(0);
@@ -515,6 +527,11 @@ void UReflectionToolLib::FSetStructPropertyByMap(void* StructAddr, UStruct* Stru
 	}
 	// Map To Struct
 	SetStructValueByMap(StructProperty, StructAddr, InMap);
+}
+
+void UReflectionToolLib::SetPPSChildren(FPropertyParserStruct& PPS, const TArray<FPropertyParserStruct>& PPSChildren)
+{
+	PPS.Children = PPSChildren;
 }
 
 #undef TypeName_TArray

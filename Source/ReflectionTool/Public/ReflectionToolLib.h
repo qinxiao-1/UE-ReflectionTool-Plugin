@@ -162,7 +162,40 @@ public:
 		P_NATIVE_END;
 	}
 	static void FGetPropertyParserStruct(const void* StructAddr, const UStruct* StructProperty, FPropertyParserStruct& OutPropertyParserStruct);
+	
+	/**
+	 * @brief 使用 PPS 设置 Struct 的值
+	 * @param StructReference 
+	 * @param InPropertyParserStruct 
+	 */
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "ReflectionTool", meta = (CustomStructureParam = "StructReference"))
+	static void SetStructByPPS(const int32& StructReference, const FPropertyParserStruct& InPropertyParserStruct);
+	DECLARE_FUNCTION(execSetStructByPPS)
+	{
+		// ----------------------------- Begin Get Property ----------------------------
+		// 获取 Struct 数据
+		Stack.MostRecentProperty = nullptr;
+		Stack.MostRecentPropertyAddress = nullptr;
+		Stack.Step(Stack.Object, NULL);
+		FStructProperty* StructProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+		void* StructAddr = Stack.MostRecentPropertyAddress;
 
+		if (!StructProperty)
+		{
+			Stack.bArrayContextFailed = true;
+			return;
+		}
+		P_GET_STRUCT_REF(FPropertyParserStruct, InPropertyParserStruct);
+		P_FINISH;
+		// ----------------------------- End Get Property -----------------------------
+		
+		// 调用函数
+		P_NATIVE_BEGIN;
+		FSetStructByPPS(StructAddr, StructProperty->Struct, InPropertyParserStruct);
+		P_NATIVE_END;
+	}
+	static void FSetStructByPPS(void* StructAddr, const UStruct* StructProperty, FPropertyParserStruct& InPropertyParserStruct);
+	
 	/**
 	 * @brief 蓝图泛型节点，将结构体转换为 TMap (无法处理存放复杂数据的 TArray TSet TMap，只处理简单数据的结果也一般)
 	 * @param StructReference 被解析的结构体
@@ -251,6 +284,13 @@ public:
 	}
 	static void FSetStructPropertyByMap(void* StructAddr, UStruct* StructProperty, const void* MapAddr, const FMapProperty* MapProperty);
 
+	/**
+	 * @brief 设置 PPS 的子节点
+	 * @param PPS 
+	 * @param PPSChildren 
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ReflectionTool")
+	static void SetPPSChildren(UPARAM(ref) FPropertyParserStruct& PPS, const TArray<FPropertyParserStruct>& PPSChildren);
 #pragma endregion 
 };
 
