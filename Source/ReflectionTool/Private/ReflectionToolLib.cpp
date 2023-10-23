@@ -4,6 +4,11 @@
 #include "ReflectionToolLib.h"
 
 #include "DataTableUtils.h"
+#include "JsonObjectConverter.h"
+#include "StructDeserializer.h"
+#include "Backends/JsonStructDeserializerBackend.h"
+
+DEFINE_LOG_CATEGORY(ReflectionTool)
 
 // 解析 InPropertyParserStruct
 #define PARSERINPROPERTYPARSERSTRUCT	\
@@ -343,8 +348,115 @@ void UReflectionToolLib::ParserComplexPPSToProperty(FProperty* Property, void* A
 	}
 }
 
+bool UReflectionToolLib::GetFunctionsByCategories(UClass* Class, const TArray<FString>& Categories,
+	TArray<FFunctionInfo>& Results, bool ShowLog)
+{
+	if (!Class)
+		return false;
+	Results.Empty();
+	for (TFieldIterator<UFunction> i(Class); i; ++i)
+	{
+		FFunctionInfo result;
+		UFunction* func = *i;
+		FString funcCategory = func->GetMetaData("Category");
+		if (!Categories.Contains(funcCategory))
+			continue;
+		FString funcName = func->GetName();
+		result.FunctionName = funcName;
+		if (ShowLog)
+		{
+			UE_LOG(ReflectionTool, Log, TEXT("--------------------------------"));
+			UE_LOG(ReflectionTool, Log, TEXT("FuncCategory is : %s"), *funcCategory);
+			UE_LOG(ReflectionTool, Log, TEXT("FuncName is : %s"), *funcName);
+			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *func->GetDesc());
+			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *func->GetMetaData("Description"));
+		}
+		TArray<FFuncParameter> InParams = TArray<FFuncParameter>({});
+		TArray<FFuncParameter> OutParams = TArray<FFuncParameter>({});
+		for	(const FProperty* Property = func->PropertyLink; Property; Property = Property->PropertyLinkNext)
+		{
+			if (Property->PropertyFlags & CPF_OutParm)
+			{
+				OutParams.Add(FFuncParameter(Property->GetCPPType(), Property->GetName()));
+				if (ShowLog)
+					UE_LOG(ReflectionTool, Log, TEXT("Out Param Name : [%s], Type is [%s]"), *Property->GetName(), *Property->GetCPPType());	
+			}
+			else
+			{
+				InParams.Add(FFuncParameter(Property->GetCPPType(), Property->GetName()));
+				if (ShowLog)
+					UE_LOG(ReflectionTool, Log, TEXT("Param Name : [%s], Type is [%s]"), *Property->GetName(), *Property->GetCPPType());
+			}
+		}
+		if (ShowLog)
+			UE_LOG(LogTemp, Warning, TEXT("--------------------------------\n"));
+		result.InParams = InParams;
+		result.OutParams = OutParams;
+		Results.Add(result);
+	}
+	return true;
+}
+
+void UReflectionToolLib::InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
+	const TMap<FString, FString>& InParams, TMap<FString, FString>& OutParams)
+{
+	if (!TargetObject)
+		return;
+	UFunction* Func = TargetObject->GetClass()->FindFunctionByName(FunctionName);
+	// UFunction* Func = (UFunction*)StaticFindObjectFast(UFunction::StaticClass(), nullptr, FunctionName, false, RF_Transient);
+	if (!Func)
+		return;
+	InvokeFunctionByName(TargetObject->GetClass(), TargetObject, Func, InParams, OutParams);
+}
+
+void UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
+                                              const TMap<FString, FString>& InParams, TMap<FString, FString>& OutParams)
+{
+	// 调用静态函数不需要对象
+	Class = TargetObject == nullptr ? Class : TargetObject->GetClass();
+	UObject* Context = TargetObject == nullptr ? Class : TargetObject;
+
+	if (!Function)
+		return;
+	
+	TArray<uint8> Params;
+	Params.AddUninitialized(Function->ParmsSize);
+	Function->InitializeStruct(Params.GetData());
+
+	TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	FJsonObjectConverter::UStructToJsonObject(Function, Function, JsonObject.ToSharedRef());
+
+	for (auto Item : InParams)
+	{
+		FProperty* Property = Function->FindPropertyByName(FName(*Item.Key));
+		if (const FNumericProperty* _ = CastField<FNumericProperty>(Property))
+		{
+			JsonObject->SetNumberField(Item.Key, FCString::Atod(*Item.Value));
+		}
+	}
+
+	TArray<uint8> FunctionParamsContainer;
+	FMemoryWriter Writer(FunctionParamsContainer);
+	TSharedRef<TJsonWriter<UCS2CHAR>> JsonWriter = TJsonWriter<UCS2CHAR>::Create(&Writer);
+	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), JsonWriter);
+	FMemoryReader Reader(FunctionParamsContainer);
+	FJsonStructDeserializerBackend DeserializerBackend(Reader);
+	FStructDeserializer::Deserialize(Params.GetData(), *Function, DeserializerBackend);
+
+	Context->ProcessEvent(Function, Params.GetData());
+
+	for (auto Item : OutParams)
+	{
+		FProperty* Property = Function->FindPropertyByName(FName(*Item.Key));
+		void* Addr = Property->ContainerPtrToValuePtr<uint8>(Params.GetData());
+		FPropertyParserStruct outPPS;
+		PropertyToPropertyStruct(Property, Addr, outPPS);
+		OutParams[Item.Key] = outPPS.Value;
+	}
+}
+
 void UReflectionToolLib::SetStructValueByMap(const UStruct* StructClass, void* Struct,
-	const TMap<FString, FString>& InMap)
+                                             const TMap<FString, FString>& InMap)
 {
 	for (TFieldIterator<FProperty> i(StructClass); i; ++i)
 	{

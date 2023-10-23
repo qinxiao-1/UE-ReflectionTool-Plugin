@@ -38,6 +38,9 @@ public class ReflectionTool : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"Json",
+				"JsonUtilities",
+				"Serialization",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
