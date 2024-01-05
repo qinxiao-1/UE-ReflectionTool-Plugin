@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "Logging/LogMacros.h"
 #include "ReflectionToolLib.generated.h"
 
@@ -64,6 +65,9 @@ struct FFunctionInfo
 	// 函数名称
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FString FunctionName = "";
+	// 函数描述
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FString FunctionDesc = "";
 	// 输入参数
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	TArray<FFuncParameter> InParams = TArray<FFuncParameter>();
@@ -112,7 +116,7 @@ public:
 
 	// 入口，顺便判断输入的 InPropertyParserStruct 是否正常
 	template<typename OutStructType>
-	static void UStructToPropertyStruct(FPropertyParserStruct InPropertyParserStruct, OutStructType& OutStruct);
+	static void ParsePPSToStruct(FPropertyParserStruct InPropertyParserStruct, OutStructType& OutStruct);
 
 	// ↑ 中调用，首个结构体拿不到 FProperty，特殊处理
 	static void ParserPropertyParserStruct(const UStruct* StructClass, void* Struct,  FPropertyParserStruct& InPropertyParserStruct);
@@ -141,9 +145,8 @@ public:
 	// 复杂数据解析
 	static void ParserComplexPPSToProperty(FProperty* Property, void* Addr, FPropertyParserStruct& InPropertyParserStruct);
 #pragma endregion
-
-#pragma region 查询函数
-
+	
+#if WITH_EDITOR
 	/**
 	 * @brief 获取指定类某个分组下的所有函数信息数据
 	 * @param Class 
@@ -154,35 +157,66 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ReflectionToolLib|Function")
 	static bool GetFunctionsByCategories(UClass* Class, const TArray<FString>& Categories, TArray<FFunctionInfo>& Results,
-	                                     bool ShowLog = false);
-
-#pragma endregion
+	bool ShowLog = false);
+	/**
+	 * 获取指定类指定后缀的所有函数信息数据
+	 * @param Class 
+	 * @param Suffix 指定后缀
+	 * @param Results 所有函数信息[ Contains: Name, InParams, OutParams ]
+	 * @param ShowLog 是否打印LOG
+	 * @return 是否成功
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ReflectionToolLib|Function")
+	static bool GetFunctionsBySuffix(UClass* Class, const TArray<FString>& Suffix, TArray<FFunctionInfo>& Results,
+										 bool ShowLog = false);
+	
+	UFUNCTION(BlueprintCallable, Category = "ReflectionToolLib|Function")
+	static bool GetProperitesByCategories(UClass* Class, const TArray<FString>& Categories,
+	                                      TArray<FFuncParameter>& Results, bool ShowLog = false);
+#endif
 
 #pragma region 执行函数
 
-	// 只能在编译之前调用，不太行
+	// ↓中调用
 	template<typename ... TReturns, typename ... TArgs>
-	static void InvokeFunction(UClass* Class, UObject* TargetObject, UFunction* Function,
+	static bool InvokeFunction(UClass* Class, UObject* TargetObject, UFunction* Function,
 	                           TTuple<TReturns...>& OutParams, TArgs&&... Args);
-	// ↑中调用
+	// 执行函数，只能在 C++ 中使用
 	template<typename ... TReturns, typename ... TArgs>
-	static void InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
+	static bool InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
 							   TTuple<TReturns...>& OutParams, TArgs&&... Args);
-
 	/**
-	 * @brief 通过函数名调用函数
+	 * @brief 通过函数名调用函数，目前传入的函数参数只支持几种基础类型
 	 * @param TargetObject 目标对象
 	 * @param FunctionName 函数名称
 	 * @param InParams 目标函数的输入参数
 	 * @param OutParams 目标函数的输出参数
+	 * @return 是否调用成功
 	 */
 	UFUNCTION(BlueprintCallable)
-	static void InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
+	static bool InvokeFunctionByName_Map(UObject* TargetObject, const FName& FunctionName,
 	                                 const TMap<FString, FString>& InParams,
 	                                 UPARAM(ref) TMap<FString, FString>& OutParams);
+protected:
 	// ↑中调用
-	static void InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
+	static bool InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
 	                                 const TMap<FString, FString>& InParams, TMap<FString, FString>& OutParams);
+public:
+	/**
+	 * @brief 通过函数名调用函数，目前传入的函数参数只支持几种基础类型
+	 * @param TargetObject 
+	 * @param FunctionName 
+	 * @param InParams 参数列表
+	 * @return 是否调用成功
+	 */
+	UFUNCTION(BlueprintCallable)
+	static bool InvokeFunctionByName_Array(UObject* TargetObject, const FName& FunctionName, const TArray<FString>& InParams);
+
+protected:
+	// ↑中调用
+	static bool InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function, const TArray<FString>& InParams);
+public:
+
 #pragma endregion
 
 #pragma region 使用Map设置结构体的值
@@ -206,6 +240,13 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "ReflectionTool")
 	static TArray<FPropertyParserStruct> GetPPSChildren(const FPropertyParserStruct& PPS);
+	/**
+	 * @brief 给指定 PPS 添加 Child
+	 * @param TargetPPS 
+	 * @param ChildPPs 
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ReflectionTool")
+	static void AddPPSChild(UPARAM(ref) FPropertyParserStruct& TargetPPS, const FPropertyParserStruct& ChildPPs);
 	/**
 	 * @brief 将解析结构体解析成 TMap (无法处理存放复杂数据的 TArray TSet TMap，只处理简单数据的结果也一般)
 	 * @param PPS 解析结构体
@@ -376,6 +417,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ReflectionTool")
 	static void SetPPSChildren(UPARAM(ref) FPropertyParserStruct& PPS, const TArray<FPropertyParserStruct>& PPSChildren);
 #pragma endregion
+
+#pragma region Helper Function
+
+	static void SetJsonFieldByProperty(TSharedPtr<FJsonObject> JsonObject, FProperty* Property, const FString& Key, const FString& Value);
+#pragma endregion 
 };
 
 template <typename InStructType>
@@ -394,7 +440,7 @@ void UReflectionToolLib::UStructToMap(const InStructType& InStruct, TMap<FString
 }
 
 template <typename OutStructType>
-void UReflectionToolLib::UStructToPropertyStruct(FPropertyParserStruct InPropertyParserStruct,
+void UReflectionToolLib::ParsePPSToStruct(FPropertyParserStruct InPropertyParserStruct,
 	OutStructType& OutStruct)
 {
 	if (InPropertyParserStruct.TypeName.IsEmpty())
@@ -409,13 +455,15 @@ void UReflectionToolLib::UStructToPropertyStruct(FPropertyParserStruct InPropert
 }
 
 template <typename ... TReturns, typename ... TArgs>
-void UReflectionToolLib::InvokeFunction(UClass* Class, UObject* TargetObject, UFunction* Function,
-	TTuple<TReturns...>& OutParams, TArgs&&... Args)
+bool UReflectionToolLib::InvokeFunction(UClass* Class, UObject* TargetObject, UFunction* Function, TTuple<TReturns...>& OutParams, TArgs&&... Args)
 {
 	// 调用静态函数不需要对象
 	Class = TargetObject == nullptr ? Class : TargetObject->GetClass();
 	UObject* Context = TargetObject == nullptr ? Class : TargetObject;
 	uint8* OutParamBuffer = (uint8*)&OutParams;
+
+	if (!Function)
+		return false;
 
 	if (Function->HasAnyFunctionFlags(FUNC_Native))	// 看是否是 c++ function
 	{
@@ -423,6 +471,7 @@ void UReflectionToolLib::InvokeFunction(UClass* Class, UObject* TargetObject, UF
 		// Forward使用原因：Args作为参数传入后，会变为左值，丢失右值属性，
 		// Forward的目的：保证传入后还是右值
 		TTuple<TArgs..., TReturns...> Params(Forward<TArgs>(Args)..., TReturns()...);
+		// TTuple<TArgs..., TReturns...> Params((Args)..., TReturns()...);
 		Context->ProcessEvent(Function, &Params);
 		for (FProperty* Property = Function->PropertyLink; Property; Property = Property->PropertyLinkNext)
 		{
@@ -435,7 +484,7 @@ void UReflectionToolLib::InvokeFunction(UClass* Class, UObject* TargetObject, UF
 				OutParamBuffer += Property->GetSize();
 			}
 		}
-		return;
+		return true;
 	}
 
 	TTuple<TArgs...> InParams(Forward<TArgs>(Args)...);
@@ -475,19 +524,20 @@ void UReflectionToolLib::InvokeFunction(UClass* Class, UObject* TargetObject, UF
 			OutParamBuffer += Property->GetSize();
 		}
 	}
+
+	return true;
 }
 
 template <typename ... TReturns, typename ... TArgs>
-void UReflectionToolLib::InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
+bool UReflectionToolLib::InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
 	TTuple<TReturns...>& OutParams, TArgs&&... Args)
 {
 	if (!TargetObject)
-		return;
+		return false;
 	UFunction* Func = TargetObject->GetClass()->FindFunctionByName(FunctionName);
-	// UFunction* Func = (UFunction*)StaticFindObjectFast(UFunction::StaticClass(), nullptr, FunctionName, false, RF_Transient);
 	if (!Func)
-		return;
-	InvokeFunction<TReturns...>(nullptr, TargetObject, Func, OutParams, Forward<TArgs>(Args)...);
+		return false;
+	return InvokeFunction<TReturns...>(nullptr, TargetObject, Func, OutParams, Forward<TArgs>(Args)...);
 }
 
 template <typename InStructType>

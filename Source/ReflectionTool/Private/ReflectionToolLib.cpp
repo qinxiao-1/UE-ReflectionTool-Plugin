@@ -7,6 +7,7 @@
 #include "JsonObjectConverter.h"
 #include "StructDeserializer.h"
 #include "Backends/JsonStructDeserializerBackend.h"
+#include "UObject/UnrealTypePrivate.h"
 
 DEFINE_LOG_CATEGORY(ReflectionTool)
 
@@ -112,7 +113,14 @@ void UReflectionToolLib::PropertyToPropertyStruct(FProperty* Property, const voi
                                                         FPropertyParserStruct& OutPropertyParserStruct)
 {
 	OutPropertyParserStruct.Name = Property->GetAuthoredName();
-	OutPropertyParserStruct.TypeName = Property->GetCPPType();
+	if (Property->GetCPPType().Contains(TEXT("<")))
+	{
+		Property->GetCPPType().Split(TEXT("<"), &OutPropertyParserStruct.TypeName, nullptr);
+	}
+	else
+	{
+		OutPropertyParserStruct.TypeName = Property->GetCPPType();
+	}
 	if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
 	{
 		const UEnum* EnumDef = EnumProperty->GetEnum();
@@ -130,7 +138,7 @@ void UReflectionToolLib::PropertyToPropertyStruct(FProperty* Property, const voi
 		}
 		else if (NumericProperty->IsInteger())
 		{
-			OutPropertyParserStruct.Value = FString::Printf(TEXT("%lldf"), NumericProperty->GetSignedIntPropertyValue(Addr));
+			OutPropertyParserStruct.Value = FString::Printf(TEXT("%lld"), NumericProperty->GetSignedIntPropertyValue(Addr));
 		}
 	}
 	else if (const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property))
@@ -172,6 +180,10 @@ void UReflectionToolLib::PropertyToPropertyStruct(FProperty* Property, const voi
 			OutPropertyParserStruct.TypeName = OutPropertyParserStruct.TypeName.Replace(TEXT("*"), TEXT("_Ptr"));
 			OutPropertyParserStruct.Value = ObjectProperty->GetObjectPropertyValue(Addr)->GetPathName();
 		}
+	}
+	else
+	{
+		Property->ExportTextItem_Direct(OutPropertyParserStruct.Value, Addr, NULL, NULL, PPF_None);
 	}
 }
 
@@ -325,6 +337,12 @@ void UReflectionToolLib::ParserSinglePPSToProperty(FProperty* Property, void* Ad
 		UObject* Object = StaticLoadObject(UObject::StaticClass(), nullptr, *InPropertyParserStruct.Value);
 		ObjectProperty->SetObjectPropertyValue(Addr, Object);
 	}
+	else
+	{
+		const TCHAR* ImportTextPtr = *InPropertyParserStruct.Value;
+		// Property->ImportText(ImportTextPtr, Addr, PPF_None, nullptr);
+		Property->ImportText_Direct(ImportTextPtr, Addr, nullptr, PPF_None);
+	}
 }
 
 void UReflectionToolLib::ParserComplexPPSToProperty(FProperty* Property, void* Addr,
@@ -348,6 +366,8 @@ void UReflectionToolLib::ParserComplexPPSToProperty(FProperty* Property, void* A
 	}
 }
 
+#if WITH_EDITOR
+
 bool UReflectionToolLib::GetFunctionsByCategories(UClass* Class, const TArray<FString>& Categories,
 	TArray<FFunctionInfo>& Results, bool ShowLog)
 {
@@ -362,14 +382,15 @@ bool UReflectionToolLib::GetFunctionsByCategories(UClass* Class, const TArray<FS
 		if (!Categories.Contains(funcCategory))
 			continue;
 		FString funcName = func->GetName();
+		FString funcDesc = func->GetMetaData("Desc");
 		result.FunctionName = funcName;
+		result.FunctionDesc = funcDesc;
 		if (ShowLog)
 		{
 			UE_LOG(ReflectionTool, Log, TEXT("--------------------------------"));
 			UE_LOG(ReflectionTool, Log, TEXT("FuncCategory is : %s"), *funcCategory);
 			UE_LOG(ReflectionTool, Log, TEXT("FuncName is : %s"), *funcName);
-			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *func->GetDesc());
-			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *func->GetMetaData("Description"));
+			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *funcDesc);
 		}
 		TArray<FFuncParameter> InParams = TArray<FFuncParameter>({});
 		TArray<FFuncParameter> OutParams = TArray<FFuncParameter>({});
@@ -397,19 +418,104 @@ bool UReflectionToolLib::GetFunctionsByCategories(UClass* Class, const TArray<FS
 	return true;
 }
 
-void UReflectionToolLib::InvokeFunctionByName(UObject* TargetObject, const FName& FunctionName,
+bool UReflectionToolLib::GetFunctionsBySuffix(UClass* Class, const TArray<FString>& Suffix,
+	TArray<FFunctionInfo>& Results, bool ShowLog)
+{
+	if (!Class)
+		return false;
+	Results.Empty();
+	for (TFieldIterator<UFunction> i(Class); i; ++i)
+	{
+		FFunctionInfo result;
+		UFunction* func = *i;
+		FString funcName = func->GetName();
+		bool tempShouldContinue = !Suffix.IsEmpty();
+		for (auto eachSuffix : Suffix)
+		{
+			if (funcName.EndsWith(eachSuffix))
+			{
+				tempShouldContinue = false;
+				break;
+			}
+		}
+		if (tempShouldContinue)
+			continue;;
+		FString funcDesc = func->GetMetaData("Desc");
+		result.FunctionName = funcName;
+		result.FunctionDesc = funcDesc;
+		if (ShowLog)
+		{
+			UE_LOG(ReflectionTool, Log, TEXT("--------------------------------"));
+			UE_LOG(ReflectionTool, Log, TEXT("FuncName is : %s"), *funcName);
+			UE_LOG(ReflectionTool, Log, TEXT("FuncDesc is : %s"), *funcDesc);
+		}
+		TArray<FFuncParameter> InParams = TArray<FFuncParameter>({});
+		TArray<FFuncParameter> OutParams = TArray<FFuncParameter>({});
+		for	(const FProperty* Property = func->PropertyLink; Property; Property = Property->PropertyLinkNext)
+		{
+			if (Property->PropertyFlags & CPF_OutParm)
+			{
+				OutParams.Add(FFuncParameter(Property->GetCPPType(), Property->GetName()));
+				if (ShowLog)
+					UE_LOG(ReflectionTool, Log, TEXT("Out Param Name : [%s], Type is [%s]"), *Property->GetName(), *Property->GetCPPType());	
+			}
+			else
+			{
+				InParams.Add(FFuncParameter(Property->GetCPPType(), Property->GetName()));
+				if (ShowLog)
+					UE_LOG(ReflectionTool, Log, TEXT("Param Name : [%s], Type is [%s]"), *Property->GetName(), *Property->GetCPPType());
+			}
+		}
+		if (ShowLog)
+			UE_LOG(LogTemp, Warning, TEXT("--------------------------------\n"));
+		result.InParams = InParams;
+		result.OutParams = OutParams;
+		Results.Add(result);
+	}
+	return true;
+}
+
+bool UReflectionToolLib::GetProperitesByCategories(UClass* Class, const TArray<FString>& Categories,
+	TArray<FFuncParameter>& Results, bool ShowLog)
+{
+	if (!Class)
+		return false;
+	Results.Empty();
+	for (TFieldIterator<FProperty> i(Class); i; ++i)
+	{
+		FFunctionInfo result;
+		FProperty* property = *i;
+		FString propCategory = property->GetMetaData("Category");
+		bool shouldContinue = true;
+		for (auto eachTargetCategory : Categories)
+		{
+			if (propCategory.Contains(eachTargetCategory))
+			{
+				shouldContinue = false;
+				break;
+			}
+		}
+		if (shouldContinue)
+			continue;
+		Results.Emplace(FFuncParameter(property->GetCPPType(), property->GetName()));
+	}
+	return true;
+}
+
+#endif
+
+bool UReflectionToolLib::InvokeFunctionByName_Map(UObject* TargetObject, const FName& FunctionName,
 	const TMap<FString, FString>& InParams, TMap<FString, FString>& OutParams)
 {
 	if (!TargetObject)
-		return;
+		return false;
 	UFunction* Func = TargetObject->GetClass()->FindFunctionByName(FunctionName);
-	// UFunction* Func = (UFunction*)StaticFindObjectFast(UFunction::StaticClass(), nullptr, FunctionName, false, RF_Transient);
 	if (!Func)
-		return;
-	InvokeFunctionByName(TargetObject->GetClass(), TargetObject, Func, InParams, OutParams);
+		return false;
+	return InvokeFunctionByName(TargetObject->GetClass(), TargetObject, Func, InParams, OutParams);
 }
 
-void UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
+bool UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
                                               const TMap<FString, FString>& InParams, TMap<FString, FString>& OutParams)
 {
 	// 调用静态函数不需要对象
@@ -417,31 +523,30 @@ void UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObje
 	UObject* Context = TargetObject == nullptr ? Class : TargetObject;
 
 	if (!Function)
-		return;
+		return false;
 	
 	TArray<uint8> Params;
 	Params.AddUninitialized(Function->ParmsSize);
-	Function->InitializeStruct(Params.GetData());
-
-	TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
-	FJsonObjectConverter::UStructToJsonObject(Function, Function, JsonObject.ToSharedRef());
-
-	for (auto Item : InParams)
+	if (Function->ParmsSize > 0)
 	{
-		FProperty* Property = Function->FindPropertyByName(FName(*Item.Key));
-		if (const FNumericProperty* _ = CastField<FNumericProperty>(Property))
-		{
-			JsonObject->SetNumberField(Item.Key, FCString::Atod(*Item.Value));
-		}
-	}
+		Function->InitializeStruct(Params.GetData());
 
-	TArray<uint8> FunctionParamsContainer;
-	FMemoryWriter Writer(FunctionParamsContainer);
-	TSharedRef<TJsonWriter<UCS2CHAR>> JsonWriter = TJsonWriter<UCS2CHAR>::Create(&Writer);
-	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), JsonWriter);
-	FMemoryReader Reader(FunctionParamsContainer);
-	FJsonStructDeserializerBackend DeserializerBackend(Reader);
-	FStructDeserializer::Deserialize(Params.GetData(), *Function, DeserializerBackend);
+		TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+
+		for (auto Item : InParams)
+		{
+			FProperty* Property = Function->FindPropertyByName(FName(*Item.Key));
+			SetJsonFieldByProperty(JsonObject, Property, Item.Key, Item.Value);
+		}
+
+		TArray<uint8> FunctionParamsContainer;
+		FMemoryWriter Writer(FunctionParamsContainer);
+		TSharedRef<TJsonWriter<UCS2CHAR>> JsonWriter = TJsonWriter<UCS2CHAR>::Create(&Writer);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), JsonWriter);
+		FMemoryReader Reader(FunctionParamsContainer);
+		FJsonStructDeserializerBackend DeserializerBackend(Reader);
+		FStructDeserializer::Deserialize(Params.GetData(), *Function, DeserializerBackend);
+	}
 
 	Context->ProcessEvent(Function, Params.GetData());
 
@@ -453,6 +558,60 @@ void UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObje
 		PropertyToPropertyStruct(Property, Addr, outPPS);
 		OutParams[Item.Key] = outPPS.Value;
 	}
+
+	return true;
+}
+
+bool UReflectionToolLib::InvokeFunctionByName_Array(UObject* TargetObject, const FName& FunctionName,
+	const TArray<FString>& InParams)
+{
+	if (!TargetObject)
+		return false;
+	UFunction* Func = TargetObject->GetClass()->FindFunctionByName(FunctionName);
+	if (!Func)
+		return false;
+	return InvokeFunctionByName(TargetObject->GetClass(), TargetObject, Func, InParams);
+}
+
+bool UReflectionToolLib::InvokeFunctionByName(UClass* Class, UObject* TargetObject, UFunction* Function,
+                                              const TArray<FString>& InParams)
+{
+	// 调用静态函数不需要对象
+	Class = TargetObject == nullptr ? Class : TargetObject->GetClass();
+	UObject* Context = TargetObject == nullptr ? Class : TargetObject;
+
+	if (!Function)
+		return false;
+	
+	TArray<uint8> Params;
+	Params.AddUninitialized(Function->ParmsSize);
+	if (Function->ParmsSize > 0)
+	{
+		Function->InitializeStruct(Params.GetData());
+
+		TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+		int32 inIndex = 0;
+
+		for	(FProperty* Property = Function->PropertyLink; Property && inIndex < InParams.Num(); Property = Property->PropertyLinkNext)
+		{
+			if (Property->PropertyFlags & CPF_Parm)
+			{
+				SetJsonFieldByProperty(JsonObject, Property, Property->GetName(), InParams[inIndex]);
+				++inIndex;
+			}
+		}
+
+		TArray<uint8> FunctionParamsContainer;
+		FMemoryWriter Writer(FunctionParamsContainer);
+		TSharedRef<TJsonWriter<UCS2CHAR>> JsonWriter = TJsonWriter<UCS2CHAR>::Create(&Writer);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), JsonWriter);
+		FMemoryReader Reader(FunctionParamsContainer);
+		FJsonStructDeserializerBackend DeserializerBackend(Reader);
+		FStructDeserializer::Deserialize(Params.GetData(), *Function, DeserializerBackend);		
+	}
+
+	Context->ProcessEvent(Function, Params.GetData());
+	return true;
 }
 
 void UReflectionToolLib::SetStructValueByMap(const UStruct* StructClass, void* Struct,
@@ -507,6 +666,12 @@ void UReflectionToolLib::SetStructValueByMap(FStructProperty* StructProperty, vo
 TArray<FPropertyParserStruct> UReflectionToolLib::GetPPSChildren(const FPropertyParserStruct& PPS)
 {
 	return PPS.Children;
+}
+
+void UReflectionToolLib::AddPPSChild(FPropertyParserStruct& TargetPPS, const FPropertyParserStruct& ChildPPs)
+{
+	TargetPPS.Children.Add(ChildPPs);
+	TargetPPS.bHaveChild = true;
 }
 
 void UReflectionToolLib::GetKeyValueFromPPS(const FPropertyParserStruct& PPS, TMap<FString, FString>& ResultMap)
@@ -644,6 +809,23 @@ void UReflectionToolLib::FSetStructPropertyByMap(void* StructAddr, UStruct* Stru
 void UReflectionToolLib::SetPPSChildren(FPropertyParserStruct& PPS, const TArray<FPropertyParserStruct>& PPSChildren)
 {
 	PPS.Children = PPSChildren;
+}
+
+void UReflectionToolLib::SetJsonFieldByProperty(TSharedPtr<FJsonObject> JsonObject, FProperty* Property,
+                                                const FString& Key, const FString& Value)
+{
+	if (CastField<FNumericProperty>(Property))
+	{
+		JsonObject->SetNumberField(Key, FCString::Atod(*Value));
+	}
+	else if (CastField<FBoolProperty>(Property))
+	{
+		JsonObject->SetBoolField(Key, FCString::ToBool(*Value));
+	}
+	else if (CastField<FStrProperty>(Property))
+	{
+		JsonObject->SetStringField(Key, Value);
+	}
 }
 
 #undef TypeName_TArray

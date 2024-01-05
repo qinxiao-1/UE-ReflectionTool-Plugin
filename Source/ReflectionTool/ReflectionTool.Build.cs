@@ -41,6 +41,8 @@ public class ReflectionTool : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"Serialization",
+				"PakFile",
+				"UMG"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
