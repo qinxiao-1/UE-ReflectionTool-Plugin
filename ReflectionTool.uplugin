@@ -1,0 +1,26 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"EngineVersion": "5.3",
+	"FriendlyName": "ReflectionTool",
+	"Description": "",
+	"Category": "Other",
+	"CreatedBy": "QinXiao",
+	"CreatedByURL": "https://github.com/qinxiao-1/UE-ReflectionTool-Plugin/tree/main",
+	"DocsURL": "",
+	"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/09c54a07dac64b13b29a7e1e2fe0edcb",
+	"SupportURL": "https://github.com/qinxiao-1/UE-ReflectionTool-Plugin/tree/main",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "ReflectionTool",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"WhitelistPlatforms": [ "Win64" ]
+		}
+	]
+}
